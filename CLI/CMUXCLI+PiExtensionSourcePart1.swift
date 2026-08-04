@@ -223,6 +223,51 @@ function looksLikePiScript(value: string): boolean {
   );
 }
 
+const piCodingAgentPackageNames = new Set([
+  "@earendil-works/pi-coding-agent",
+  "@mariozechner/pi-coding-agent",
+]);
+
+function resolvedRegularFile(value: string, requireExecutable = false): string | null {
+  if (!value) return null;
+  try {
+    const resolved = fs.realpathSync(path.resolve(value));
+    if (!fs.statSync(resolved).isFile()) return null;
+    if (requireExecutable) fs.accessSync(resolved, fs.constants.X_OK);
+    return resolved;
+  } catch (_) {
+    return null;
+  }
+}
+
+function piPackageMetadata(scriptPath: string): Record<string, unknown> | null {
+  let directory = path.dirname(scriptPath);
+  for (let depth = 0; depth < 8; depth += 1) {
+    try {
+      const packageJSON = JSON.parse(
+        fs.readFileSync(path.join(directory, "package.json"), "utf8"),
+      ) as Record<string, unknown>;
+      const packageName = firstString(packageJSON.name);
+      if (packageName && piCodingAgentPackageNames.has(packageName)) return packageJSON;
+    } catch (_) {}
+    const parent = path.dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  return null;
+}
+
+// Capture the runtime and package entrypoint that loaded this extension. Unlike
+// PATH, these process-owned values still identify Pi if PATH changes before a
+// turn ends. The cmux CLI revalidates both paths before forwarding credentials.
+function trustedPiAutoNamingLaunchArgv(): string[] | null {
+  const executable = resolvedRegularFile(firstString(process.execPath) || "", true);
+  if (!executable) return null;
+  const script = resolvedRegularFile(firstString(process.argv?.[1]) || "");
+  if (script && piPackageMetadata(script)) return [executable, script];
+  return looksLikePiExecutable(executable) ? [executable] : null;
+}
+
 function normalizedLaunchArgv(): string[] {
   const raw = Array.isArray(process.argv) ? process.argv.map((value) => String(value)) : [];
   if (raw.length === 0) return [resolveExecutable("pi")];
@@ -239,27 +284,8 @@ function detectedPiVersion(): string | null {
     return looksLikePiScript(candidate) || looksLikePiExecutable(candidate);
   });
   if (!script) return null;
-  let scriptPath = path.resolve(String(script));
-  try {
-    // npm launches through bin symlinks, so inspect the package containing the resolved script.
-    scriptPath = fs.realpathSync(scriptPath);
-  } catch (_) {}
-  let directory = path.dirname(scriptPath);
-  for (let depth = 0; depth < 8; depth += 1) {
-    try {
-      const packageJSON = JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf8"));
-      if (
-        packageJSON?.name === "@earendil-works/pi-coding-agent" ||
-        packageJSON?.name === "@mariozechner/pi-coding-agent"
-      ) {
-        return firstString(packageJSON.version);
-      }
-    } catch (_) {}
-    const parent = path.dirname(directory);
-    if (parent === directory) break;
-    directory = parent;
-  }
-  return null;
+  const scriptPath = resolvedRegularFile(String(script));
+  return scriptPath ? firstString(piPackageMetadata(scriptPath)?.version) : null;
 }
 
 function supportsAgentSettled(): boolean {
@@ -410,17 +436,29 @@ function hookEnvironment(
   includeSocketPassword = false,
   includeAutoNamingProviderEnv = false,
 ): NodeJS.ProcessEnv {
+  const autoNamingLaunchArgv = includeAutoNamingProviderEnv
+    ? trustedPiAutoNamingLaunchArgv()
+    : null;
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
-    if (shouldPreserveEnvKey(key, includeAutoNamingProviderEnv)) env[key] = value;
+    if (shouldPreserveEnvKey(key, autoNamingLaunchArgv !== null)) env[key] = value;
   }
   // Only cmux CLI children need the socket credential; keep it out of the generic allowlist.
   if (includeSocketPassword) {
     const socketPassword = process.env.CMUX_SOCKET_PASSWORD;
     if (socketPassword) env.CMUX_SOCKET_PASSWORD = socketPassword;
   }
-  if (!env.CMUX_AGENT_LAUNCH_ARGV_B64) {
+  if (autoNamingLaunchArgv) {
+    env.CMUX_PI_AUTONAME_LAUNCH_ARGV_B64 = base64NulSeparated(autoNamingLaunchArgv);
+  }
+  const launchKind = firstString(env.CMUX_AGENT_LAUNCH_KIND)?.toLowerCase();
+  if (
+    launchKind !== "pi" ||
+    !env.CMUX_AGENT_LAUNCH_EXECUTABLE ||
+    !env.CMUX_AGENT_LAUNCH_ARGV_B64 ||
+    !env.CMUX_AGENT_LAUNCH_CWD
+  ) {
     const argv = normalizedLaunchArgv();
     env.CMUX_AGENT_LAUNCH_KIND = "pi";
     env.CMUX_AGENT_LAUNCH_EXECUTABLE = argv[0] || resolveExecutable("pi");

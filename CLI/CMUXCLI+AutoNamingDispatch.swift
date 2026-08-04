@@ -48,6 +48,8 @@ extension CMUXCLI {
             return resolveClaudeExecutable(searchPath: env["PATH"]) != nil
         case "codex":
             return resolveCodexExecutable(searchPath: env["PATH"]) != nil
+        case "pi":
+            return trustedPiAutoNamingLaunchCommand(from: env) != nil
         default:
             guard let def = CMUXCLI.agentDef(named: agent) else { return false }
             return resolveExecutableInSearchPath(def.binaryName, searchPath: env["PATH"]) != nil

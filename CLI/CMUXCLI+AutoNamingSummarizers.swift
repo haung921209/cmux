@@ -2,6 +2,101 @@ import Darwin
 import Foundation
 
 extension CMUXCLI {
+    static let piAutoNamingLaunchArgvEnvironmentKey = "CMUX_PI_AUTONAME_LAUNCH_ARGV_B64"
+
+    func trustedPiAutoNamingLaunchCommand(
+        from env: [String: String]
+    ) -> (executable: String, prefixArguments: [String])? {
+        guard let values = decodedPiAutoNamingLaunchArgv(
+            env[Self.piAutoNamingLaunchArgvEnvironmentKey]
+        ), values.count == 1 || values.count == 2,
+           let executable = canonicalAutoNamingFile(values[0], requireExecutable: true)
+        else {
+            return nil
+        }
+
+        if values.count == 1 {
+            let executableName = URL(fileURLWithPath: executable).lastPathComponent.lowercased()
+            guard executableName == "pi" || executableName == "pi-coding-agent" else { return nil }
+            return (executable, [])
+        }
+
+        let runtimeName = URL(fileURLWithPath: executable).lastPathComponent.lowercased()
+        guard ["node", "nodejs", "bun", "deno"].contains(runtimeName),
+              let script = canonicalAutoNamingFile(values[1], requireExecutable: false),
+              piCodingAgentPackageContains(script: script)
+        else {
+            return nil
+        }
+        return (executable, [script])
+    }
+
+    private func decodedPiAutoNamingLaunchArgv(_ rawValue: String?) -> [String]? {
+        guard let rawValue, rawValue.utf8.count <= 64 * 1024,
+              let data = Data(base64Encoded: rawValue),
+              !data.isEmpty
+        else {
+            return nil
+        }
+        var values: [String] = []
+        var start = data.startIndex
+        for index in data.indices where data[index] == 0 {
+            guard start != index,
+                  let value = String(data: data[start..<index], encoding: .utf8)
+            else {
+                return nil
+            }
+            values.append(value)
+            start = data.index(after: index)
+        }
+        if start < data.endIndex {
+            guard let value = String(data: data[start..<data.endIndex], encoding: .utf8),
+                  !value.isEmpty
+            else {
+                return nil
+            }
+            values.append(value)
+        }
+        return values.isEmpty ? nil : values
+    }
+
+    private func canonicalAutoNamingFile(_ rawPath: String, requireExecutable: Bool) -> String? {
+        guard rawPath.hasPrefix("/") else { return nil }
+        let resolvedPath = URL(fileURLWithPath: rawPath)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: resolvedPath, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              !requireExecutable || FileManager.default.isExecutableFile(atPath: resolvedPath)
+        else {
+            return nil
+        }
+        return resolvedPath
+    }
+
+    private func piCodingAgentPackageContains(script: String) -> Bool {
+        let packageNames: Set<String> = [
+            "@earendil-works/pi-coding-agent",
+            "@mariozechner/pi-coding-agent"
+        ]
+        var directory = URL(fileURLWithPath: script).deletingLastPathComponent()
+        for _ in 0..<8 {
+            let packageURL = directory.appendingPathComponent("package.json", isDirectory: false)
+            if let data = try? Data(contentsOf: packageURL),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let name = object["name"] as? String,
+               packageNames.contains(name) {
+                return true
+            }
+            let parent = directory.deletingLastPathComponent()
+            if parent.path == directory.path { break }
+            directory = parent
+        }
+        return false
+    }
+
     func runAutoNamingSummarizer(
         def: AgentHookDef,
         prompt: String,
@@ -66,7 +161,26 @@ extension CMUXCLI {
                 "--verbatim"
             ]
             stdinPrompt = ""
-        case "pi", "omp":
+        case "pi":
+            guard let promptPath = promptFile() else { return nil }
+            guard let command = trustedPiAutoNamingLaunchCommand(from: env) else {
+                telemetry.breadcrumb("pi-hook.auto-name.no-trusted-binary")
+                return nil
+            }
+            executablePath = command.executable
+            arguments = command.prefixArguments + [
+                "--print",
+                "--no-tools",
+                "--no-session",
+                "--no-extensions",
+                "--no-skills",
+                "--no-prompt-templates",
+                "--no-context-files",
+                "@\(promptPath)",
+                "Generate a 2-5 word title from the attached conversation excerpt. Output only the title."
+            ]
+            stdinPrompt = ""
+        case "omp":
             guard let promptPath = promptFile() else { return nil }
             executablePath = executable()
             arguments = [

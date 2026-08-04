@@ -28346,7 +28346,19 @@ struct CMUXCLI {
         let workingDirectory = (envCaptureIsTrusted ? normalizedHookValue(env["CMUX_AGENT_LAUNCH_CWD"]) : nil)
             ?? normalizedHookValue(cwd)
             ?? normalizedHookValue(env["PWD"])
-        let environment = selectedAgentLaunchEnvironment(from: env, kind: launcher)
+        var environment = selectedAgentLaunchEnvironment(from: env, kind: launcher)
+        if fallbackKind == "pi", envCaptureIsTrusted,
+           let capturedAutoNamingArgv = normalizedHookValue(
+               env[Self.piAutoNamingLaunchArgvEnvironmentKey]
+           ), capturedAutoNamingArgv.utf8.count <= 64 * 1024,
+           let decodedAutoNamingArgv = decodeNULSeparatedBase64(capturedAutoNamingArgv),
+           decodedAutoNamingArgv.count == 1 || decodedAutoNamingArgv.count == 2 {
+            // This non-secret process identity is not part of the general
+            // restore environment. Keep it only on the hook session record so
+            // an explicit/manual auto-name rerun uses the Pi package that
+            // emitted the authenticated hook instead of resolving mutable PATH.
+            environment[Self.piAutoNamingLaunchArgvEnvironmentKey] = capturedAutoNamingArgv
+        }
 
         // Fallback when the launch argv is genuinely UNAVAILABLE: plain `codex` with no cmux launcher
         // (no CMUX_AGENT_LAUNCH_ARGV_B64) and an unresolved/exited PID, so processArguments returns nil.

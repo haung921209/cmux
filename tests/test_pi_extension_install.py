@@ -669,6 +669,7 @@ if [ -n "${AWS_BEDROCK_FORCE_HTTP1-}" ]; then record="$record|AWS_BEDROCK_FORCE_
 if [ -n "${AWS_BEDROCK_FORCE_CACHE-}" ]; then record="$record|AWS_BEDROCK_FORCE_CACHE=present"; fi
 if [ -n "${HTTPS_PROXY-}" ]; then record="$record|HTTPS_PROXY=present"; fi
 if [ -n "${CMUX_SOCKET_PASSWORD-}" ]; then record="$record|CMUX_SOCKET_PASSWORD=present"; fi
+if [ -n "${CMUX_PI_AUTONAME_LAUNCH_ARGV_B64-}" ]; then record="$record|CMUX_PI_AUTONAME_LAUNCH_ARGV_B64=present"; fi
 if [ -n "${ANTHROPIC_AUTH_TOKEN-}" ]; then record="$record|ANTHROPIC_AUTH_TOKEN=present"; fi
 if [ -n "${CUSTOM_PASSWORD-}" ]; then record="$record|CUSTOM_PASSWORD=present"; fi
 if [ -n "${AMP_API_KEY-}" ]; then record="$record|AMP_API_KEY=present"; fi
@@ -1431,11 +1432,28 @@ await waitForCompletionHookCount(completionCount);
             "HTTPS_PROXY",
         }
         stop_env_records = [record for record in env_records if "hooks pi stop" in record[0]]
-        if not stop_env_records or any(
+        trusted_stop_env_records = [
+            record
+            for record in stop_env_records
+            if "CMUX_PI_AUTONAME_LAUNCH_ARGV_B64" in record[1]
+        ]
+        if not trusted_stop_env_records or any(
             not auto_naming_env_keys.issubset(present)
-            for _, present in stop_env_records
+            for _, present in trusted_stop_env_records
         ):
-            print(f"FAIL: Pi Stop hooks did not receive the auto-naming provider environment: {stop_env_records!r}")
+            print(
+                "FAIL: trusted Pi Stop hooks did not receive their launch capture and provider environment: "
+                f"{trusted_stop_env_records!r}"
+            )
+            return 1
+        untrusted_stop_provider_leaks = [
+            (command, present & auto_naming_env_keys)
+            for command, present in stop_env_records
+            if "CMUX_PI_AUTONAME_LAUNCH_ARGV_B64" not in present
+            and present & auto_naming_env_keys
+        ]
+        if untrusted_stop_provider_leaks:
+            print(f"FAIL: Pi Stop without a trusted launch capture received credentials: {untrusted_stop_provider_leaks!r}")
             return 1
         provider_leaks = [
             (command, present & auto_naming_env_keys)
@@ -1445,6 +1463,15 @@ await waitForCompletionHookCount(completionCount);
         ]
         if provider_leaks:
             print(f"FAIL: extension passed the auto-naming provider environment outside Pi Stop: {provider_leaks!r}")
+            return 1
+        launch_capture_leaks = [
+            command
+            for command, present in env_records
+            if "hooks pi stop" not in command
+            and "CMUX_PI_AUTONAME_LAUNCH_ARGV_B64" in present
+        ]
+        if launch_capture_leaks:
+            print(f"FAIL: extension passed the Pi auto-name launch capture outside Stop: {launch_capture_leaks!r}")
             return 1
         if shadow_env_log.exists() and shadow_env_log.read_text(encoding="utf-8").strip():
             print(

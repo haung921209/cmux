@@ -79,6 +79,15 @@ extension CMUXCLI {
             return
         }
 
+        var summarizerEnv = env
+        if def.name == "pi",
+           let capturedLaunchArgv = mapped?.launchCommand?.environment?[Self.piAutoNamingLaunchArgvEnvironmentKey] {
+            // A detached hook already inherits this capture directly. Restoring
+            // it from the session record also keeps an explicit/manual
+            // `cmux hooks pi auto-name` on the same trusted Pi package.
+            summarizerEnv[Self.piAutoNamingLaunchArgvEnvironmentKey] = capturedLaunchArgv
+        }
+
         let engine = AutoNamingEngine()
         let sourceResult: (messages: [AutoNamingTranscriptMessage], lineCount: Int)? = {
             switch source {
@@ -113,7 +122,7 @@ extension CMUXCLI {
         guard let sourceResult, !sourceResult.messages.isEmpty else { return }
 
         let resolution = resolvedSummarizerAgent(
-            probe: probe, sessionAgent: def.name, env: env, telemetry: telemetry
+            probe: probe, sessionAgent: def.name, env: summarizerEnv, telemetry: telemetry
         )
         runMessageBackedAutoName(
             sessionId: sessionId,
@@ -132,7 +141,7 @@ extension CMUXCLI {
             guard let raw = summarize(
                 summarizerAgent: resolution.agent,
                 prompt: prompt,
-                env: env,
+                env: summarizerEnv,
                 timeout: engine.config.llmTimeout,
                 telemetry: telemetry
             ) else {
