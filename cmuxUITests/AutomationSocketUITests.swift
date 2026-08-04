@@ -225,6 +225,64 @@ final class AutomationSocketUITests: XCTestCase {
         XCTAssertEqual(typedTitles.first, "$iterate-pr")
     }
 
+    func testPaneAgentFooterPersistsAcrossScrollbackAndClears() throws {
+        let app = configuredApp(mode: "allowAll")
+        defer { app.terminate() }
+        app.launch()
+
+        XCTAssertTrue(
+            ensureForegroundAfterLaunch(app, timeout: 12.0),
+            "Expected app to launch for pane footer test. state=\(app.state.rawValue)"
+        )
+        XCTAssertTrue(
+            waitForSocketPong(timeout: 12.0),
+            "Expected socket ping at \(socketPath). diagnostics=\(loadDiagnostics())"
+        )
+
+        let workspace = try XCTUnwrap(
+            socketResult(
+                method: "workspace.create",
+                params: ["title": "Pane footer XCUITest", "focus": true]
+            ),
+            "Expected workspace.create to succeed"
+        )
+        let surfaceID = try XCTUnwrap(
+            workspace["surface_id"] as? String,
+            "Expected created surface id"
+        )
+        let footer = app.otherElements["PaneAgentFooter-\(surfaceID)"]
+        XCTAssertFalse(footer.exists, "A pane without agent metadata must not reserve footer space")
+
+        try sendTerminalCommand(
+            "printf '\\033]699;agent=claude;context=34%%\\033\\\\'",
+            surfaceID: surfaceID
+        )
+
+        XCTAssertTrue(
+            footer.waitForExistence(timeout: 8.0),
+            "OSC 699 agent metadata should create a persistent pane footer"
+        )
+        XCTAssertEqual(footer.label, "claude [34%]")
+
+        try sendTerminalCommand("seq 1 200", surfaceID: surfaceID)
+        XCTAssertTrue(footer.exists, "The pane footer must remain anchored while terminal output scrolls")
+        XCTAssertEqual(footer.label, "claude [34%]")
+
+        try sendTerminalCommand(
+            "printf '\\033]699;\\033\\\\'",
+            surfaceID: surfaceID
+        )
+        let footerRemoved = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: footer
+        )
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [footerRemoved], timeout: 8.0),
+            .completed,
+            "An empty OSC 699 payload should dismiss the pane footer"
+        )
+    }
+
     private func configuredApp(mode: String) -> XCUIApplication {
         let app = XCUIApplication.cmuxTestApplication()
         app.launchArguments += ["-\(modeKey)", mode]
@@ -379,6 +437,23 @@ final class AutomationSocketUITests: XCTestCase {
             return nil
         }
         return envelope["result"] as? [String: Any]
+    }
+
+    private func sendTerminalCommand(_ command: String, surfaceID: String) throws {
+        _ = try XCTUnwrap(
+            socketResult(
+                method: "surface.send_text",
+                params: ["surface_id": surfaceID, "text": command]
+            ),
+            "Expected surface.send_text to accept \(command)"
+        )
+        _ = try XCTUnwrap(
+            socketResult(
+                method: "surface.send_key",
+                params: ["surface_id": surfaceID, "key": "enter"]
+            ),
+            "Expected surface.send_key to submit \(command)"
+        )
     }
 
     private func waitForTextBoxFixture(
