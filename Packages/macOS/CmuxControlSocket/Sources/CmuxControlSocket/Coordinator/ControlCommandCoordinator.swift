@@ -42,9 +42,10 @@ public final class ControlCommandCoordinator {
     @ObservationIgnored
     public var handles: ControlHandleRegistry
 
-    /// Per-request memo for ``identityKinds(for:)``, cleared by
+    /// Per-request memo for ``identityHasKind(_:_:)``, keyed by identity then
+    /// kind so only the kinds actually asked about are stored. Cleared by
     /// ``resetIdentityKindCache()`` at each request boundary.
-    var identityKindCache: [UUID: (kinds: Set<ControlHandleKind>, authoritative: Bool)] = [:]
+    var identityKindCache: [UUID: [ControlHandleKind: Bool]] = [:]
 
     @ObservationIgnored
     nonisolated let simulatorOperationAdmissionGate =
@@ -301,24 +302,38 @@ public final class ControlCommandCoordinator {
         guard let parsed = UUID(uuidString: raw) else {
             return handles.uuid(forRef: raw, kinds: expected)
         }
-        let known = identityKinds(for: parsed)
-        if !known.kinds.isEmpty {
-            guard !known.kinds.isDisjoint(with: expected) else { return nil }
+        // Ask about the expected kinds first and stop at the first match, so a
+        // valid selector costs one topology lookup rather than a full sweep.
+        var sawUnclassifiable = false
+        for kind in expected {
+            switch identityHasKind(parsed, kind) {
+            case true: return parsed
+            case false: continue
+            case nil: sawUnclassifiable = true
+            }
+        }
+        if sawUnclassifiable {
+            // No live-topology answer available (no app attached). Absence of
+            // evidence is not evidence of absence, so fall back to mint history
+            // and stay permissive when even that is silent.
+            let minted = handles.mintedKinds(for: parsed)
+            guard minted.isEmpty || !minted.isDisjoint(with: expected) else { return nil }
             return parsed
         }
-        // Live topology says this id names nothing. For a key the CLI never
-        // fills from caller context, that is unambiguously a user-specified
-        // target that does not exist, so it fails closed.
-        if known.authoritative, !Self.callerInjectableKeys.contains(key) {
-            return nil
+        // Live topology is certain this id is not any expected kind. For a key
+        // the CLI never fills from caller context that settles it: whether the
+        // id names some other kind or nothing at all, it is a user-specified
+        // target this parameter cannot accept.
+        if !Self.callerInjectableKeys.contains(key) { return nil }
+        // For caller-injectable keys, only a wrong-kind id is rejected; one that
+        // names nothing stays acceptable. That is gap 1 of the issue: the CLI
+        // injects the caller's own CMUX_WORKSPACE_ID / CMUX_SURFACE_ID into most
+        // commands, so failing closed here would also fail ordinary commands
+        // issued from a since-closed workspace. Telling those apart needs the
+        // wire-format change the issue defers to a product call.
+        for kind in ControlHandleKind.allCases where !expected.contains(kind) {
+            if identityHasKind(parsed, kind) == true { return nil }
         }
-        // Otherwise it stays acceptable. That is gap 1 of the issue: the CLI
-        // injects the caller's own CMUX_WORKSPACE_ID / CMUX_SURFACE_ID into
-        // most commands, so failing closed on these keys would also fail
-        // ordinary commands issued from a since-closed workspace. Telling those
-        // apart needs the wire-format change the issue defers to a product
-        // call. Non-authoritative classification (no app attached) also stays
-        // permissive, since absence of evidence is not evidence of absence.
         return parsed
     }
 
@@ -329,30 +344,21 @@ public final class ControlCommandCoordinator {
         "workspace_id", "surface_id", "terminal_id", "tab_id", "panel_id",
     ]
 
-    /// The kinds an identity is known to have, preferring the app's live
-    /// topology over the handle registry's mint history, plus whether that
-    /// answer is authoritative.
+    /// Whether live topology says an identifier names an object of one kind,
+    /// or `nil` when no authoritative answer is available.
     ///
     /// Mint history alone is not a sound oracle: dock-hosted objects may not be
     /// minted yet, and ``ControlHandleRegistry/removeRef(kind:uuid:)`` erases
-    /// what the registry knew. The conformer answers from live topology when it
-    /// can; the registry is the fallback for contexts with no app attached
-    /// (tests, and any conformer that does not implement the seam), and that
-    /// fallback is never treated as authoritative.
+    /// what the registry knew, so this prefers the conformer's live answer.
     ///
-    /// Memoized for the current request: classification sweeps live topology,
-    /// and one request resolves the same id repeatedly (rejection checking,
-    /// routing, then the command body).
-    func identityKinds(for uuid: UUID) -> (kinds: Set<ControlHandleKind>, authoritative: Bool) {
-        if let cached = identityKindCache[uuid] { return cached }
-        let resolved: (kinds: Set<ControlHandleKind>, authoritative: Bool)
-        if let authoritative = context?.controlIdentityKinds(for: uuid) {
-            resolved = (authoritative, true)
-        } else {
-            resolved = (handles.mintedKinds(for: uuid), false)
-        }
-        identityKindCache[uuid] = resolved
-        return resolved
+    /// Memoized per (identity, kind) for the current request. One request
+    /// resolves the same id repeatedly — rejection checking, routing, then the
+    /// command body — and each answer costs a main-actor topology lookup.
+    func identityHasKind(_ uuid: UUID, _ kind: ControlHandleKind) -> Bool? {
+        if let cached = identityKindCache[uuid]?[kind] { return cached }
+        guard let answer = context?.controlIdentity(uuid, isOfKind: kind) else { return nil }
+        identityKindCache[uuid, default: [:]][kind] = answer
+        return answer
     }
 
     /// Drops the memoized identity classifications.

@@ -333,19 +333,23 @@ struct ControlCommandCoordinatorRoutingKindTests {
         #expect(!routing.hasRejectedSelector)
     }
 
-    /// Classification is memoized per request, so a routed command does not
-    /// sweep live topology once per selector occurrence.
-    @Test func identityClassificationIsMemoizedPerRequest() {
+    /// A valid selector costs a single topology lookup, and repeat resolutions
+    /// within a request are memoized. Classification runs on the main actor in
+    /// the control-socket path, so it must not sweep all of topology per id.
+    @Test func validSelectorsCostOneLookupAndAreMemoizedPerRequest() {
         let coordinator = ControlCommandCoordinator()
         let context = FakeSurfaceControlCommandContext()
         let workspace = UUID()
         context.identityKinds = [workspace: [.workspace]]
         coordinator.context = context
 
-        _ = coordinator.routingSelectors([
-            "workspace_id": .string(workspace.uuidString),
-            "surface_id": .string(workspace.uuidString),
-        ])
+        _ = coordinator.routingSelectors(["workspace_id": .string(workspace.uuidString)])
+        // `workspace_id` expects `.workspace` first, so one lookup settles it.
+        #expect(context.identityKindQueries[workspace] == 1)
+
+        // The rejection check and the routing walk both resolve the selector;
+        // the second resolution must not re-query.
+        _ = coordinator.routingSelectors(["workspace_id": .string(workspace.uuidString)])
         #expect(context.identityKindQueries[workspace] == 1)
 
         // A new request re-snapshots topology.

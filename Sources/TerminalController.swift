@@ -3762,29 +3762,23 @@ class TerminalController {
     /// dock-hosted and remote-tmux objects that have never been minted, and is
     /// unaffected by `removeRef`. An empty result means the identity names
     /// nothing live; `nil` means this controller cannot classify at all.
-    func controlIdentityKinds(for uuid: UUID) -> Set<ControlHandleKind>? {
+    func controlIdentity(_ uuid: UUID, isOfKind kind: ControlHandleKind) -> Bool? {
         guard let app = AppDelegate.shared else { return nil }
-        var kinds: Set<ControlHandleKind> = []
-        if app.tabManagerFor(windowId: uuid) != nil {
-            kinds.insert(.window)
+        switch kind {
+        case .window:
+            // A window-Dock owner id IS its owning window's id.
+            return app.tabManagerFor(windowId: uuid) != nil
+                || app.tabManagerForWindowDockOwner(uuid) != nil
+        case .workspace:
+            return uuid == AppDelegate.windowDockAliasWorkspaceId
+                || app.tabManagerFor(tabId: uuid) != nil
+        case .workspaceGroup:
+            return v2LocateTabManager(forGroupId: uuid) != nil
+        case .pane:
+            return controlTabManager(paneID: uuid) != nil
+        case .surface:
+            return controlTabManager(surfaceID: uuid) != nil
         }
-        // A window-Dock owner id IS its owning window's id.
-        if app.tabManagerForWindowDockOwner(uuid) != nil {
-            kinds.insert(.window)
-        }
-        if uuid == AppDelegate.windowDockAliasWorkspaceId || app.tabManagerFor(tabId: uuid) != nil {
-            kinds.insert(.workspace)
-        }
-        if v2LocateTabManager(forGroupId: uuid) != nil {
-            kinds.insert(.workspaceGroup)
-        }
-        if controlTabManager(paneID: uuid) != nil {
-            kinds.insert(.pane)
-        }
-        if controlTabManager(surfaceID: uuid) != nil {
-            kinds.insert(.surface)
-        }
-        return kinds
     }
 
     @MainActor

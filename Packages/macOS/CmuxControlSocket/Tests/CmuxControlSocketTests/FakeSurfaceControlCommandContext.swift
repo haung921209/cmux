@@ -25,10 +25,10 @@ final class FakeSurfaceControlCommandContext: ControlCommandContext {
     /// How many times each identity was classified, for memoization coverage.
     var identityKindQueries: [UUID: Int] = [:]
 
-    func controlIdentityKinds(for uuid: UUID) -> Set<ControlHandleKind>? {
+    func controlIdentity(_ uuid: UUID, isOfKind kind: ControlHandleKind) -> Bool? {
         identityKindQueries[uuid, default: 0] += 1
         guard let identityKinds else { return nil }
-        return identityKinds[uuid] ?? []
+        return identityKinds[uuid]?.contains(kind) ?? false
     }
 
     func controlWindowSummaries() -> [ControlWindowSummary] { [] }
