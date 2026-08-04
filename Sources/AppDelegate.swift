@@ -7492,9 +7492,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         event: NSEvent? = nil,
         debugSource: String = "newCodeWorkspace"
     ) -> Bool {
-        performNewWorkspaceCreationAction(
+        let targetManager = preferredTabManager
+            ?? event.flatMap { preferredMainWindowContextForShortcutRouting(event: $0)?.tabManager }
+            ?? tabManager
+        if let targetManager,
+           let windowId = windowId(for: targetManager),
+           let window = mainWindow(for: windowId) {
+            CodeWebViewWarmer.shared.prepareNextWorkspaceClaim(in: window)
+        }
+        return performNewWorkspaceCreationAction(
             initialSurface: .code,
-            preferredTabManager: preferredTabManager,
+            preferredTabManager: targetManager,
             event: event,
             debugSource: debugSource
         )
