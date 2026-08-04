@@ -214,28 +214,18 @@ def check_auto_naming_from_generated_hook_environment(
     state_path = state_dir / "pi-hook-sessions.json"
     auto_name_bin = root / "auto-name-bin"
     auto_name_bin.mkdir()
-    auto_name_log = root / "auto-name-pi.log"
+    trusted_pi_log = root / "auto-name-trusted-pi.log"
+    shadow_pi_log = root / "auto-name-shadow-pi.log"
     fake_pi = auto_name_bin / "pi"
     make_executable(
         fake_pi,
         f"""#!/usr/bin/env bash
 set -euo pipefail
-printf 'argv=%s\n' "$*" >> {str(auto_name_log)!r}
-if [ "${{ANTHROPIC_API_KEY-}}" != "pi-autoname-provider-key" ]; then
-  printf 'exit=1 No API key found for the selected model.\n' >> {str(auto_name_log)!r}
-  printf 'No API key found for the selected model.\n' >&2
-  exit 1
-fi
-if [ "${{AWS_ENDPOINT_URL_BEDROCK_RUNTIME-}}" != "https://bedrock-proxy.example.invalid/runtime" ] \
-  || [ "${{AWS_BEDROCK_SKIP_AUTH-}}" != "1" ] \
-  || [ "${{AWS_BEDROCK_FORCE_HTTP1-}}" != "1" ] \
-  || [ "${{AWS_BEDROCK_FORCE_CACHE-}}" != "1" ] \
-  || [ "${{HTTPS_PROXY-}}" != "http://provider-proxy.example.invalid:8080" ]; then
-  printf 'exit=1 Bedrock provider environment missing.\n' >> {str(auto_name_log)!r}
-  printf 'Bedrock provider environment missing.\n' >&2
-  exit 1
-fi
-printf 'exit=0 title=Repair Pi Auto Naming\n' >> {str(auto_name_log)!r}
+record='invoked'
+for key in ANTHROPIC_API_KEY AWS_ENDPOINT_URL_BEDROCK_RUNTIME AWS_BEDROCK_SKIP_AUTH AWS_BEDROCK_FORCE_HTTP1 AWS_BEDROCK_FORCE_CACHE HTTPS_PROXY; do
+  if [ -n "${{!key-}}" ]; then record="$record|$key=present"; fi
+done
+printf '%s\n' "$record" >> {str(shadow_pi_log)!r}
 printf 'Repair Pi Auto Naming\n'
 """,
     )
@@ -243,7 +233,32 @@ printf 'Repair Pi Auto Naming\n'
     modern_package = root / "auto-name-node-modules" / "@earendil-works" / "pi-coding-agent"
     modern_cli = modern_package / "dist" / "cli.js"
     modern_cli.parent.mkdir(parents=True)
-    make_executable(modern_cli, "#!/usr/bin/env node\n")
+    make_executable(
+        modern_cli,
+        f"""#!/usr/bin/env node
+const fs = require("node:fs");
+const logPath = {str(trusted_pi_log)!r};
+fs.appendFileSync(logPath, `argv=${{process.argv.slice(2).join(" ")}}\\n`);
+if (process.env.ANTHROPIC_API_KEY !== "pi-autoname-provider-key") {{
+  fs.appendFileSync(logPath, "exit=1 No API key found for the selected model.\\n");
+  process.stderr.write("No API key found for the selected model.\\n");
+  process.exit(1);
+}}
+if (
+  process.env.AWS_ENDPOINT_URL_BEDROCK_RUNTIME !== "https://bedrock-proxy.example.invalid/runtime" ||
+  process.env.AWS_BEDROCK_SKIP_AUTH !== "1" ||
+  process.env.AWS_BEDROCK_FORCE_HTTP1 !== "1" ||
+  process.env.AWS_BEDROCK_FORCE_CACHE !== "1" ||
+  process.env.HTTPS_PROXY !== "http://provider-proxy.example.invalid:8080"
+) {{
+  fs.appendFileSync(logPath, "exit=1 Bedrock provider environment missing.\\n");
+  process.stderr.write("Bedrock provider environment missing.\\n");
+  process.exit(1);
+}}
+fs.appendFileSync(logPath, "exit=0 title=Repair Pi Auto Naming\\n");
+process.stdout.write("Repair Pi Auto Naming\\n");
+""",
+    )
     (modern_package / "package.json").write_text(
         json.dumps({"name": "@earendil-works/pi-coding-agent", "version": "0.81.1"}),
         encoding="utf-8",
@@ -334,7 +349,14 @@ await handlers.get("session_shutdown")({ reason: "test complete" }, ctx);
                 break
             time.sleep(0.05)
 
-        pi_log = auto_name_log.read_text(encoding="utf-8") if auto_name_log.exists() else ""
+        shadow_log = shadow_pi_log.read_text(encoding="utf-8") if shadow_pi_log.exists() else ""
+        if shadow_log.strip():
+            print(
+                "FAIL: Pi auto-name invoked a mutable PATH shadow instead of the running Pi package: "
+                f"{shadow_log!r}"
+            )
+            return 1
+        pi_log = trusted_pi_log.read_text(encoding="utf-8") if trusted_pi_log.exists() else ""
         if "--no-extensions" not in pi_log:
             print(f"FAIL: Pi auto-name did not run with --no-extensions: {pi_log!r}")
             return 1
