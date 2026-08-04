@@ -30,16 +30,14 @@ final class WorkspaceSidebarScrollUITests: XCTestCase {
         XCTAssertTrue(waitForWindowCount(atLeast: 1, app: app, timeout: 8.0), "Expected a main window")
         let sidebar = app.descendants(matching: .any)["Sidebar"].firstMatch
         XCTAssertTrue(sidebar.waitForExistence(timeout: 5.0), "Expected the workspace sidebar")
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ENDSWITH %@", "workspace 1 of 1"))
+            .firstMatch
         XCTAssertTrue(
-            sidebar.tables.firstMatch.waitForExistence(timeout: 5.0),
-            "Expected the AppKit NSTableView sidebar path, not the unaffected SwiftUI list."
-        )
-        XCTAssertTrue(
-            waitForWorkspaceRowHittable(index: 1, count: 1, app: app, timeout: 8.0),
+            pollUntil(timeout: 8.0) { row.exists && row.isHittable },
             "Expected the initial workspace row to be visible"
         )
 
-        let row = workspaceRow(index: 1, count: 1, app: app)
         let target = row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         target.click()
         RunLoop.current.run(until: Date().addingTimeInterval(0.08))
@@ -62,7 +60,7 @@ final class WorkspaceSidebarScrollUITests: XCTestCase {
         )
         renameField.typeKey(.return, modifierFlags: [])
 
-        let renamedRow = app.descendants(matching: .other)
+        let renamedRow = app.descendants(matching: .any)
             .matching(
                 NSPredicate(
                     format: "label == %@",

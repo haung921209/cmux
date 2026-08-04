@@ -902,8 +902,7 @@ struct SidebarInlineRenameTests {
         window.contentView = cell
         window.orderFront(nil)
         defer {
-            window.contentView = nil
-            window.close()
+            window.orderOut(nil)
         }
 
         cell.beginInlineRename()
