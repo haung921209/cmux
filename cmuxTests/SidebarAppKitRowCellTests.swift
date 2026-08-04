@@ -53,6 +53,7 @@ struct SidebarAppKitRowCellTests {
 
     private static func makeModel(
         workspaceId: UUID = UUID(),
+        title: String = "Workspace",
         isActive: Bool = false,
         canClose: Bool = true,
         settings: SidebarTabItemSettingsSnapshot? = nil,
@@ -64,7 +65,7 @@ struct SidebarAppKitRowCellTests {
         return SidebarWorkspaceRowModel(
             workspaceId: workspaceId,
             index: 0,
-            snapshot: makeSnapshot(metadataEntries: metadataEntries),
+            snapshot: makeSnapshot(title: title, metadataEntries: metadataEntries),
             settings: resolvedSettings,
             isActive: isActive,
             isMultiSelected: false,
@@ -153,7 +154,8 @@ struct SidebarAppKitRowCellTests {
         model: SidebarWorkspaceRowModel,
         tab: Workspace? = nil,
         tabManager: TabManager? = nil,
-        onOpenStatusURL: @escaping (URL) -> Void = { _ in }
+        onOpenStatusURL: @escaping (URL) -> Void = { _ in },
+        onCommitRename: @escaping (String) -> Void = { _ in }
     ) -> SidebarAppKitRowActions {
         let resolvedTab = tab ?? Workspace()
         let commands = SidebarWorkspaceRowCommands(
@@ -198,7 +200,7 @@ struct SidebarAppKitRowCellTests {
             onEndChecklistItemEdit: { _ in },
             applyTodoStatus: { _ in },
             hideTodoStatus: {},
-            commitRename: { _ in }
+            commitRename: onCommitRename
         )
     }
 
@@ -287,6 +289,60 @@ struct SidebarAppKitRowCellTests {
             y: textView.textContainerOrigin.y + glyphBounds.midY
         )
         return textView.convert(localPoint, to: textView.superview)
+    }
+
+    @Test("inline rename stays active and commits the edited workspace title")
+    func inlineRenameCommitsEditedTitle() throws {
+        let originalTitle = "Original Workspace"
+        let editedTitle = "Edited Workspace"
+        let model = Self.makeModel(title: originalTitle)
+        var committedTitles: [String] = []
+        let cell = SidebarWorkspaceRowTableCellView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 80)
+        )
+        cell.configure(
+            model: model,
+            actions: Self.makeActions(
+                model: model,
+                onCommitRename: { committedTitles.append($0) }
+            ),
+            isPointerHovering: false,
+            contextMenuDidOpen: {},
+            contextMenuDidClose: {}
+        )
+        let window = NSWindow(
+            contentRect: cell.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = cell
+        window.orderFront(nil)
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+
+        cell.beginInlineRename()
+
+        #expect(
+            committedTitles.isEmpty,
+            "Beginning inline rename must not commit the pre-filled title."
+        )
+        let editor = try #require(cell.renameField.currentEditor() as? NSTextView)
+        #expect(window.firstResponder === editor)
+
+        editor.setSelectedRange(NSRange(location: 0, length: (editor.string as NSString).length))
+        editor.insertText(editedTitle, replacementRange: editor.selectedRange())
+        #expect(cell.renameField.stringValue == editedTitle)
+        let handled = cell.renameField.control(
+            cell.renameField,
+            textView: editor,
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        )
+
+        #expect(handled)
+        #expect(committedTitles == [editedTitle])
     }
 
     @Test(arguments: zip(["codex", "claude_code"], ["Running", "Needs input"]))
