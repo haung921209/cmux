@@ -281,11 +281,13 @@ struct SidebarAppKitRowCellTests {
         let pixelCount: Int
     }
 
-    private static func brightInkMetrics(in view: NSView) throws -> BrightInkMetrics {
+    private static func brightInkMetrics(
+        in view: NSView,
+        renderingScale: CGFloat = 4
+    ) throws -> BrightInkMetrics {
         view.layoutSubtreeIfNeeded()
         view.displayIfNeeded()
         let bounds = view.bounds.integral
-        let renderingScale: CGFloat = 4
         let bitmap = try #require(NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: max(1, Int(bounds.width * renderingScale)),
@@ -543,6 +545,37 @@ struct SidebarAppKitRowCellTests {
             #expect(abs(actualInk.bounds.midY - badge.bounds.midY) <= 0.25)
             #expect(abs(actualInk.pixelCount - regularInk.pixelCount)
                 < abs(actualInk.pixelCount - semiboldInk.pixelCount))
+        }
+    }
+
+    @Test
+    func unreadBadgesCenterNarrowSingleDigitAtRetinaScale() throws {
+        let workspace = Self.configuredCell(
+            model: Self.makeModel(canClose: false, unreadCount: 1)
+        )
+        workspace.frame = NSRect(x: 0, y: 0, width: 320, height: 44)
+        workspace.layoutSubtreeIfNeeded()
+        let workspaceBadge = try #require(
+            Self.descendants(of: workspace)
+                .compactMap { $0 as? SidebarRowUnreadBadgeView }
+                .first { !$0.isHidden }
+        )
+
+        let group = SidebarGroupHeaderTableCellView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 32)
+        )
+        group.configurePresentation(model: Self.makeGroupModel(name: "Core", unreadCount: 1))
+        group.layoutSubtreeIfNeeded()
+        let groupBadge = try #require(
+            Self.descendants(of: group)
+                .compactMap { $0 as? SidebarRowUnreadBadgeView }
+                .first { !$0.isHidden }
+        )
+
+        for badge in [workspaceBadge, groupBadge] {
+            let ink = try Self.brightInkMetrics(in: badge, renderingScale: 2)
+            #expect(abs(ink.bounds.midX - badge.bounds.midX) < 0.001)
+            #expect(abs(ink.bounds.midY - badge.bounds.midY) < 0.001)
         }
     }
 
