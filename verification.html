@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Human Review Brief — cmux #8160</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #11100e;
+      --panel: #1b1916;
+      --panel-2: #23201b;
+      --line: #3a342b;
+      --text: #f4efe7;
+      --muted: #bdb3a4;
+      --orange: #ff9f2f;
+      --orange-soft: #3a2612;
+      --red: #ff6b5f;
+      --green: #7fd38a;
+      --code: #0c0b09;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+    body {
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.34;
+    }
+    main {
+      min-height: 100vh;
+      max-width: 1560px;
+      margin: 0 auto;
+      padding: 16px 18px;
+      display: grid;
+      grid-template-rows: auto auto auto minmax(0, 1fr);
+      gap: 10px;
+    }
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: start;
+    }
+    .eyebrow {
+      color: var(--orange);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 3px 0 6px; font-size: clamp(24px, 2.4vw, 38px); line-height: 1.03; }
+    .summary { max-width: 1120px; margin: 0; color: #ddd5c9; font-size: 14px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .status {
+      border: 1px solid #7b4b1b;
+      background: var(--orange-soft);
+      color: #ffc477;
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      white-space: nowrap;
+    }
+    .facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .facts span {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 999px;
+      padding: 4px 8px;
+    }
+    .setup {
+      border-left: 4px solid var(--orange);
+      background: #211a12;
+      padding: 7px 10px;
+      color: #e8d8c4;
+    }
+    .setup strong { color: var(--orange); }
+    .claim {
+      display: grid;
+      grid-template-columns: 170px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      border: 1px solid #7b4b1b;
+      background: linear-gradient(90deg, var(--orange-soft), #201810);
+      border-radius: 10px;
+      padding: 9px 12px;
+    }
+    .claim h2 {
+      margin: 0;
+      color: var(--orange);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .claim p { margin: 0; font-size: 14px; font-weight: 750; }
+    .claim small { display: block; margin-top: 2px; color: var(--muted); font-weight: 500; }
+    .checklist {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+      counter-reset: review-step;
+    }
+    article {
+      min-width: 0;
+      overflow: hidden;
+      counter-increment: review-step;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 10px;
+      padding: 9px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    article.primary { grid-column: span 2; border-color: #7b4b1b; }
+    h3 {
+      margin: 0;
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      font-size: 14px;
+      line-height: 1.15;
+    }
+    h3::before {
+      content: counter(review-step);
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--orange);
+      color: #1b1107;
+      font-size: 12px;
+      font-weight: 950;
+    }
+    .label {
+      margin-right: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    p { margin: 0; }
+    pre {
+      margin: 0;
+      max-width: 100%;
+      overflow-x: auto;
+      border: 1px solid #302b24;
+      border-radius: 6px;
+      background: var(--code);
+      color: #eee7dc;
+      padding: 6px 7px;
+      font: 10.5px/1.28 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre;
+      tab-size: 2;
+    }
+    .verdicts {
+      margin-top: auto;
+      display: grid;
+      gap: 3px;
+      font-size: 11.5px;
+    }
+    .ok .label { color: var(--green); }
+    .bad .label { color: var(--red); }
+    a {
+      color: #ffbd70;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+      font-weight: 750;
+    }
+    kbd {
+      border: 1px solid #514a40;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      background: #2a2722;
+      padding: 0 4px;
+      font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    @media (max-width: 1050px) {
+      main { display: block; }
+      main > * { margin-bottom: 10px; }
+      .checklist { grid-template-columns: 1fr; grid-template-rows: none; }
+      article.primary { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">Human review brief · cmux issue #8160</div>
+        <h1>Tracked agent kind in custom sidebars</h1>
+        <p class="summary">The branch adds optional <code>workspaces[].tabs[].agent</code>, derived from per-panel tracked PID keys, normalizes <code>claude_code</code> to <code>claude</code>, and omits the field for plain shells. Static review, test wiring, a local tagged compile, and sidebar validation are the only positive evidence; there is no test result, CI run, PR, screenshot, or captured live-agent output.</p>
+      </div>
+      <div class="status">SALVAGEABLE · UNVERIFIED</div>
+    </header>
+
+    <div>
+      <div class="facts">
+        <span>HEAD <code>c644c97159</code></span>
+        <span>2 commits</span>
+        <span>8 behind <code>origin/main</code></span>
+        <span>no PR</span>
+        <span>no CI/check runs</span>
+        <span>existing test file is wired</span>
+      </div>
+      <div class="setup"><strong>Setup gap:</strong> the named issue-8160 worktree is currently absent; only its branch/ref remains. Never run this review from the dirty issue-9424 checkout—step 1 restores and pins the intended tree.</div>
+    </div>
+
+    <section class="claim" aria-label="Single most important unverified claim">
+      <h2>Single unverified claim</h2>
+      <p>A real Codex launched through cmux remains <code>agent == "codex"</code> after becoming idle—even with a shell-like terminal title—and the field disappears after Codex exits.<small>The added test calls <code>recordAgentPID</code> directly, bypassing the real wrapper/hooks and idle transition.</small></p>
+    </section>
+
+    <section class="checklist" aria-label="Human verification checklist">
+      <article>
+        <h3>Restore, pin, cloud-build</h3>
+        <pre>CMUX_REVIEW_REPO=/Users/austinwang/manaflow/cmuxterm-hq2/repo
+CMUX_REVIEW_WT=/Users/austinwang/manaflow/cmuxterm-hq2/worktrees/issue-8160-custom-sidebars-expose-the-tracked-agent
+if [ ! -d "$CMUX_REVIEW_WT" ]; then
+  git -C "$CMUX_REVIEW_REPO" worktree prune --expire now
+  git -C "$CMUX_REVIEW_REPO" worktree add "$CMUX_REVIEW_WT" issue-8160-custom-sidebars-expose-the-tracked-agent
+fi
+cd "$CMUX_REVIEW_WT"
+test -x ./scripts/reload-cloud.sh || ln -s ../../../scripts/reload-cloud.sh ./scripts/reload-cloud.sh
+git fetch origin
+test "$(git rev-parse HEAD)" = c644c97159c39992366732fcb4ba18c8df400604
+git diff --check origin/main...HEAD
+./scripts/reload-cloud.sh --tag sym8160</pre>
+        <p><span class="label">Click</span><a href="http://127.0.0.1:17320/sym8160">Launch cmux DEV sym8160</a> only after <code>BUILD_OK</code>.</p>
+        <div class="verdicts">
+          <p class="ok"><span class="label">Correct</span>Remote builder reports <code>BUILD_OK</code>; tagged app launches.</p>
+          <p class="bad"><span class="label">Wrong</span>Different SHA, diff error, local-build fallback, compile failure, or launch failure.</p>
+        </div>
+      </article>
+
+      <article>
+        <h3>Run the wired regression suite</h3>
+        <pre>./scripts/reload-cloud.sh xctest --tag sym8160 \
+  --scheme cmux-unit \
+  --only-testing cmuxTests/WorkspaceSidebarObservationTests</pre>
+        <div class="verdicts">
+          <p class="ok"><span class="label">Correct</span><code>XCTEST_OK</code>; both <code>codex</code> and <code>claude_code → claude</code> parameter cases execute and pass.</p>
+          <p class="bad"><span class="label">Wrong</span>Nonzero exit, compile failure, either case fails, or zero tests execute.</p>
+        </div>
+      </article>
+
+      <article>
+        <h3>Install the visible probe</h3>
+        <pre>mkdir -p "$HOME/.config/cmux/sidebars"
+tee "$HOME/.config/cmux/sidebars/issue-8160-review.swift" &gt;/dev/null &lt;&lt;'SWIFT'
+VStack(alignment: .leading, spacing: 6) {
+  ForEach(workspaces) { workspace in
+    Text(workspace.title).bold()
+    ForEach(workspace.tabs) { tab in
+      if let agent = tab.agent {
+        Text("AGENT \(agent) | \(tab.title)")
+      } else {
+        Text("SHELL | \(tab.title)")
+      }
+    }
+  }
+}
+SWIFT
+CMUX_TAG=sym8160 scripts/cmux-debug-cli.sh sidebar validate issue-8160-review</pre>
+        <p><span class="label">Click</span>In tagged cmux: Settings → Beta features → Custom sidebars ON; right-click the sidebar toggle → <code>issue-8160-review</code>.</p>
+        <div class="verdicts">
+          <p class="ok"><span class="label">Correct</span>Validation says OK; ordinary terminals render <code>SHELL</code>, with no blank/error view.</p>
+          <p class="bad"><span class="label">Wrong</span><code>tab.agent</code> is rejected, view is blank, or an untouched shell renders <code>AGENT</code>.</p>
+        </div>
+      </article>
+
+      <article class="primary">
+        <h3>Exercise the exact idle-Codex bug</h3>
+        <p><span class="label">Click/type</span>Click <strong>+</strong> twice. Leave the first fresh workspace at its shell prompt. In the second, type:</p>
+        <pre>codex
+Reply only READY</pre>
+        <p>Wait until Codex finishes and is visibly idle. Right-click the sidebar toggle → Workspaces; confirm that row has the Codex icon. Switch back to <code>issue-8160-review</code> and wait two seconds.</p>
+        <div class="verdicts">
+          <p class="ok"><span class="label">Correct</span>The control stays <code>SHELL</code>; the Codex row becomes and remains <code>AGENT codex</code> while idle, independent of its title.</p>
+          <p class="bad"><span class="label">Proves wrong</span>Default sidebar recognizes Codex but the custom row is missing, says <code>SHELL</code>, emits another value, or flips back to <code>SHELL</code> on idle.</p>
+        </div>
+      </article>
+
+      <article>
+        <h3>Verify stale state clears</h3>
+        <p><span class="label">Click/type</span>Return to the Codex terminal, type <code>/exit</code>, press <kbd>Return</kbd>, and wait two seconds.</p>
+        <div class="verdicts">
+          <p class="ok"><span class="label">Correct</span>That same row changes from <code>AGENT codex</code> to <code>SHELL</code>; the control row remains <code>SHELL</code>.</p>
+          <p class="bad"><span class="label">Proves wrong</span><code>AGENT codex</code> remains after process exit, disappears from the wrong row, or contaminates the plain-shell control.</p>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
